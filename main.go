@@ -3,18 +3,20 @@ package main
 import (
 	"bufio"
 	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"sync"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/fatih/color"
 	"golang.org/x/net/websocket"
 )
 
 // Version is the current version.
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 var (
 	origin             string
@@ -63,9 +65,9 @@ func printErrors(errors <-chan error) {
 		if err == io.EOF {
 			fmt.Printf("\r✝ %v - connection closed by remote\n", magenta(err))
 			os.Exit(0)
-		} else {
-			fmt.Printf("\rerr %v\n> ", red(err))
 		}
+
+		fmt.Printf("\rerr %v\n> ", red(err))
 	}
 }
 
@@ -84,6 +86,38 @@ func outLoop(ws *websocket.Conn, out <-chan []byte, errors chan<- error) {
 	}
 }
 
+func dumpCerts(certificates [][]byte, verifiedChains [][]*x509.Certificate) error {
+	for i, certBytes := range certificates {
+		cert, err := x509.ParseCertificate(certBytes)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Certificate #%d:\n", i+1)
+		subject := cert.Subject.String()
+		if i == 0 {
+			subject = fmt.Sprintf("CN=%s", magenta(cert.Subject.CommonName))
+		}
+		fmt.Printf("\tSubject: %s\n", subject)
+		fmt.Printf("\tIssuer: %s\n", cert.Issuer)
+		fmt.Printf("\tValid from: %s (%s)\n", cert.NotBefore, humanize.Time(cert.NotBefore))
+		fmt.Printf("\tValid until: %s (%s)\n", cert.NotAfter, magenta(humanize.Time(cert.NotAfter)))
+		fmt.Printf("\tSANs: %v\n", cert.DNSNames)
+		fmt.Printf("\tVersion: %d\n", cert.Version)
+		fmt.Printf("\tSerial number: %s\n", cert.SerialNumber)
+		fmt.Printf("\tExtensions: %v\n", cert.Extensions)
+		fmt.Printf("\tExtra extensions: %v\n", cert.ExtraExtensions)
+		fmt.Printf("\tUnhandled critical extensions: %v\n", cert.UnhandledCriticalExtensions)
+		fmt.Printf("\tPublic key algorithm: %s\n", cert.PublicKeyAlgorithm)
+		fmt.Printf("\tSignature algorithm: %s\n", cert.SignatureAlgorithm)
+		fmt.Printf("\tSignature: %x\n", cert.Signature)
+		if i < len(verifiedChains) {
+			fmt.Printf("\tVerified chains: %v\n", verifiedChains[i])
+		}
+		fmt.Println()
+	}
+	return nil
+}
+
 func dial(url, protocol, origin string) (ws *websocket.Conn, err error) {
 	config, err := websocket.NewConfig(url, origin)
 	if err != nil {
@@ -94,8 +128,15 @@ func dial(url, protocol, origin string) (ws *websocket.Conn, err error) {
 	}
 	config.TlsConfig = &tls.Config{
 		InsecureSkipVerify: insecureSkipVerify,
+		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+			return dumpCerts(rawCerts, verifiedChains)
+		},
 	}
-	return websocket.DialConfig(config)
+	conn, err := websocket.DialConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("%#v: %#v: %s", config, config.TlsConfig, err.Error())
+	}
+	return conn, nil
 }
 
 func main() {
