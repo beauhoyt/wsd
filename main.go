@@ -87,34 +87,67 @@ func outLoop(ws *websocket.Conn, out <-chan []byte, errors chan<- error) {
 }
 
 func dumpCerts(certificates [][]byte, verifiedChains [][]*x509.Certificate) error {
+	fmt.Print(cyan("#############################\n"))
+	fmt.Print(cyan("# Raw Certificates Received #\n"))
+	fmt.Print(cyan("#############################\n"))
 	for i, certBytes := range certificates {
-		cert, err := x509.ParseCertificate(certBytes)
+		err := printCert(i, certBytes)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Certificate #%d:\n", i+1)
-		subject := cert.Subject.String()
-		if i == 0 {
-			subject = fmt.Sprintf("CN=%s", magenta(cert.Subject.CommonName))
-		}
-		fmt.Printf("\tSubject: %s\n", subject)
-		fmt.Printf("\tIssuer: %s\n", cert.Issuer)
-		fmt.Printf("\tValid from: %s (%s)\n", cert.NotBefore, humanize.Time(cert.NotBefore))
-		fmt.Printf("\tValid until: %s (%s)\n", cert.NotAfter, magenta(humanize.Time(cert.NotAfter)))
-		fmt.Printf("\tSANs: %v\n", cert.DNSNames)
-		fmt.Printf("\tVersion: %d\n", cert.Version)
-		fmt.Printf("\tSerial number: %s\n", cert.SerialNumber)
-		fmt.Printf("\tExtensions: %v\n", cert.Extensions)
-		fmt.Printf("\tExtra extensions: %v\n", cert.ExtraExtensions)
-		fmt.Printf("\tUnhandled critical extensions: %v\n", cert.UnhandledCriticalExtensions)
-		fmt.Printf("\tPublic key algorithm: %s\n", cert.PublicKeyAlgorithm)
-		fmt.Printf("\tSignature algorithm: %s\n", cert.SignatureAlgorithm)
-		fmt.Printf("\tSignature: %x\n", cert.Signature)
-		if i < len(verifiedChains) {
-			fmt.Printf("\tVerified chains: %v\n", verifiedChains[i])
-		}
 		fmt.Println()
 	}
+
+	fmt.Print(green("###############################\n"))
+	fmt.Print(green("# Verified Certificate Chains #\n"))
+	fmt.Print(green("###############################\n"))
+	for i, chain := range verifiedChains {
+		fmt.Printf("Verified Chain #%d:\n", i+1)
+		for j, cert := range chain {
+			err := printCert(j, cert.Raw)
+			if err != nil {
+				return err
+			}
+			fmt.Println()
+		}
+	}
+
+	return nil
+}
+
+func printCert(i int, certificate []byte) error {
+	cert, err := x509.ParseCertificate(certificate)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Certificate #%d:\n", i+1)
+	subject := cert.Subject.String()
+	if i == 0 {
+		subject = fmt.Sprintf("CN=%s", magenta(cert.Subject.CommonName))
+	}
+	fmt.Printf("\tSubject: %s\n", subject)
+	fmt.Printf("\tIssuer: %s\n", cert.Issuer)
+	fmt.Printf("\tValid from: %s (%s)\n", cert.NotBefore, humanize.Time(cert.NotBefore))
+	fmt.Printf("\tValid until: %s (%s)\n", cert.NotAfter, magenta(humanize.Time(cert.NotAfter)))
+	fmt.Printf("\tSANs: %v\n", cert.DNSNames)
+	fmt.Printf("\tVersion: %d\n", cert.Version)
+	fmt.Printf("\tSerial number: %s\n", cert.SerialNumber)
+	fmt.Printf("\tExtensions:\n")
+	for extNum, ext := range cert.Extensions {
+		fmt.Printf("\t\t%d: ID:%s ; Critical:%t ; Value:%x\n", extNum, ext.Id, ext.Critical, ext.Value)
+	}
+	fmt.Printf("\tExtra Extensions:\n")
+	for extNum, ext := range cert.ExtraExtensions {
+		fmt.Printf("\t\t%d: ID:%s ; Critical:%t ; Value:%x\n", extNum, ext.Id, ext.Critical, ext.Value)
+	}
+	fmt.Printf("\tUnhandled Critical Extensions:\n")
+	for extNum, ext := range cert.UnhandledCriticalExtensions {
+		fmt.Printf("\t\t%d: ID:%s", extNum, ext)
+	}
+	fmt.Printf("\tPublic key algorithm: %s\n", cert.PublicKeyAlgorithm)
+	fmt.Printf("\tSignature algorithm: %s\n", cert.SignatureAlgorithm)
+	fmt.Printf("\tSignature: %x\n", cert.Signature)
+
 	return nil
 }
 
